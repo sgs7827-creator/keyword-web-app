@@ -56,10 +56,15 @@ def parse_cnt(val):
     try: return int(s.replace(',', ''))
     except: return 0
 
-def get_blog_count(kw):
-    headers = {"X-Naver-Client-Id": NAVER_ID, "X-Naver-Client-Secret": NAVER_SECRET}
+def get_blog_count (kw):
+    # 네이버 클라우드 플랫폼(NAVER API HUB) 전용 헤더로 변경
+    headers = {
+        "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
+        "X-NCP-APIGW-API-KEY": NAVER_SECRET
+    }
     try:
-        res = requests.get("https://openapi.naver.com/v1/search/blog.json", headers=headers, params={"query": kw, "display": 1}, timeout=5)
+        # 네이버 클라우드 플랫폼 전용 주소(URL)로 변경
+        res = requests.get("https://naverapihub.apigw.ntruss.com/search/v1/blog", headers=headers, params={"query": kw, "display": 1}, timeout=5)
         return res.json().get('total', 0) if res.status_code == 200 else 0
     except: return 0
 
