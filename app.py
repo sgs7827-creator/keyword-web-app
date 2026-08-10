@@ -44,7 +44,7 @@ NAVER_SECRET = st.secrets["NAVER_SECRET"]
 
 
 # ====================================================
-# 💎 3단계: 진짜 프로그램 본문 (우리가 만든 완벽한 코드)
+# 💎 3단계: 진짜 프로그램 본문
 # ====================================================
 def get_naver_signature(timestamp, method, path, secret):
     msg = timestamp + "." + method + "." + path
@@ -63,7 +63,6 @@ def get_blog_count (kw):
         "X-NCP-APIGW-API-KEY": NAVER_SECRET
     }
     try:
-        # 네이버 클라우드 플랫폼 전용 주소(URL)로 변경
         res = requests.get("https://naverapihub.apigw.ntruss.com/search/v1/blog", headers=headers, params={"query": kw, "display": 1}, timeout=5)
         return res.json().get('total', 0) if res.status_code == 200 else 0
     except: return 0
@@ -81,7 +80,8 @@ def fetch_naver_autocompletions(keyword):
 st.set_page_config(page_title="나만의 키워드 마스터", layout="wide")
 st.title("🚀 나만의 블로그 키워드 올인원 툴")
 
-tab1, tab2 = st.tabs(["📝 1. 타 블로그 벤치마킹 분석", "💎 2. 황금 롱테일 키워드 전수조사"])
+# 📌 탭 3개가 되도록 구조 수정
+tab1, tab2, tab3 = st.tabs(["📝 1. 타 블로그 벤치마킹 분석", "💎 2. 황금 롱테일 키워드 전수조사", "⚡ 3. 빠른 검색량/경쟁률 일괄 조회"])
 
 with tab1:
     st.subheader("최신 50개 포스팅 타겟 키워드 분석")
@@ -273,3 +273,67 @@ with tab2:
                     final_df = pd.DataFrame(global_results, columns=['키워드', 'PC', 'MO', '조회수합계', '블로그문서수', '경쟁비율']).sort_values(by='조회수합계', ascending=False)
                     csv2 = final_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
                     st.download_button(label="📥 CSV 파일로 다운로드", data=csv2, file_name=f"{target_kw.replace(' ', '')}_황금키워드리포트.csv", mime="text/csv")
+
+
+# ====================================================
+# 📌 탭 3: 신규 추가된 빠른 다중 검색 기능
+# ====================================================
+with tab3:
+    st.subheader("키워드 검색량 및 블로그 문서 수 일괄 조회")
+    st.markdown("💡 단일 키워드를 입력하거나, 여러 개의 키워드를 **줄바꿈(엔터)**으로 구분하여 입력하세요.")
+    
+    # 여러 줄을 입력받을 수 있는 텍스트 영역 생성
+    quick_kws_input = st.text_area("조회할 키워드 입력:", height=150, key="quick_kws")
+    
+    if st.button("빠른 조회 시작", type="primary", key="btn_tab3"):
+        if not quick_kws_input.strip():
+            st.warning("조회할 키워드를 1개 이상 입력해주세요.")
+        else:
+            # 엔터 단위로 쪼개고 빈 줄은 무시하는 리스트 생성
+            raw_kws = quick_kws_input.split('\n')
+            target_kws = [kw.strip() for kw in raw_kws if kw.strip()]
+            
+            if not target_kws:
+                st.warning("유효한 키워드가 없습니다.")
+            else:
+                quick_results = []
+                progress_quick = st.progress(0, text="API 정밀 분석 준비 중...")
+                quick_table = st.empty()
+                
+                for idx, kw in enumerate(target_kws):
+                    progress_quick.progress((idx + 1) / len(target_kws), text=f"분석 중: {kw} ({idx+1}/{len(target_kws)})")
+                    
+                    pc, mo, total = 0, 0, 0
+                    timestamp = str(int(time.time() * 1000))
+                    ad_headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_LICENSE, "X-Customer": str(AD_ID), "X-Signature": get_naver_signature(timestamp, "GET", "/keywordstool", AD_SECRET)}
+                    
+                    # 네이버 광고 API 연동[cite: 2]
+                    try:
+                        res = requests.get("https://api.naver.com/keywordstool", params={'hintKeywords': kw.replace(" ", ""), 'showDetail': '1'}, headers=ad_headers)
+                        if res.status_code == 200 and res.json().get('keywordList'):
+                            for item in res.json()['keywordList']:
+                                if item['relKeyword'].replace(" ", "").lower() == kw.replace(" ", "").lower():
+                                    pc, mo = parse_cnt(item['monthlyPcQcCnt']), parse_cnt(item['monthlyMobileQcCnt'])
+                                    total = pc + mo
+                                    break
+                    except: pass
+                    
+                    # 블로그 문서 수 API 연동[cite: 2]
+                    doc_cnt = get_blog_count(kw)
+                    
+                    ratio = round(doc_cnt / total, 2) if total > 0 else 0
+                    quick_results.append([kw, pc, mo, total, doc_cnt, ratio])
+                    
+                    # 조회될 때마다 실시간으로 엑셀 표 업데이트
+                    df_quick = pd.DataFrame(quick_results, columns=['키워드', 'PC', 'MO', '조회수합계', '블로그문서수', '경쟁비율']).sort_values(by='조회수합계', ascending=False)
+                    quick_table.dataframe(df_quick, use_container_width=True)
+                    
+                    time.sleep(0.3) # 너무 빠른 조회로 인한 API 차단 방지
+                    
+                progress_quick.empty()
+                st.success(f"✨ 총 {len(target_kws)}개 키워드 조회가 깔끔하게 완료되었습니다!")
+                
+                # 분석 결과를 CSV로 다운로드하는 기능 
+                if quick_results:
+                    csv3 = df_quick.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                    st.download_button(label="📥 조회 결과 CSV 다운로드", data=csv3, file_name="빠른키워드조회결과.csv", mime="text/csv", key="dl_tab3")
