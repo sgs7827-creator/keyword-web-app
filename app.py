@@ -144,7 +144,7 @@ with tab1:
 
 with tab2:
     st.subheader("씨앗 키워드 기반 연관/롱테일 키워드 전수조사")
-    target_kw = st.text_input("씨앗 키워드를 입력하세요 (예: 삼성전자 주가):", key="target_kw")
+    target_kw = st.text_input("씨앗 키워드를 띄어쓰기로 구분해 입력하세요 (예: 삼성전자 주가 -> 두 단어 모두 포함된 키워드만 추출):", key="target_kw")
     
     if st.button("전수 조사 시작 (타이머 장착 버전)", type="primary", key="btn_tab2"):
         if not target_kw:
