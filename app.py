@@ -10,7 +10,6 @@ import re, time, hmac, hashlib, base64
 # 🔒 1단계: 웹사이트 접속용 비밀번호 자물쇠 만들기
 # ====================================================
 def check_password():
-    """비밀번호가 맞아야만 아래 본문을 보여주는 함수입니다."""
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
@@ -18,16 +17,14 @@ def check_password():
         st.title("🔐 나만의 키워드 툴 (접근 제한)")
         st.text_input("비밀번호를 입력하세요:", type="password", key="password")
         
-        # 사용자가 비밀번호를 입력하면, 서버 비밀 금고(APP_PASSWORD)와 비교합니다.
         if st.session_state.password == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
-            st.rerun() # 화면 새로고침
+            st.rerun() 
         elif st.session_state.password != "":
             st.error("비밀번호가 틀렸습니다. 다시 확인해주세요.")
         return False
     return True
 
-# 통과하지 못하면 여기서 프로그램 실행을 멈춥니다. (본문 노출 안 됨)
 if not check_password():
     st.stop()
 
@@ -57,7 +54,6 @@ def parse_cnt(val):
     except: return 0
 
 def get_blog_count (kw):
-    # 네이버 클라우드 플랫폼(NAVER API HUB) 전용 헤더로 변경
     headers = {
         "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
         "X-NCP-APIGW-API-KEY": NAVER_SECRET
@@ -80,9 +76,17 @@ def fetch_naver_autocompletions(keyword):
 st.set_page_config(page_title="나만의 키워드 마스터", layout="wide")
 st.title("🚀 나만의 블로그 키워드 올인원 툴")
 
-# 📌 탭 3개가 되도록 구조 수정
-tab1, tab2, tab3 = st.tabs(["📝 1. 타 블로그 벤치마킹 분석", "💎 2. 황금 롱테일 키워드 전수조사", "⚡ 3. 빠른 검색량/경쟁률 일괄 조회"])
+# 📌 탭을 4개로 늘립니다.
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📝 1. 타 블로그 벤치마킹", 
+    "💎 2. 롱테일 키워드 전수조사", 
+    "⚡ 3. 빠른 일괄 조회", 
+    "💡 4. 지식iN 질문 수집기"
+])
 
+# ====================================================
+# [그대로 유지] 탭 1: 벤치마킹
+# ====================================================
 with tab1:
     st.subheader("최신 50개 포스팅 타겟 키워드 분석")
     blog_id = st.text_input("벤치마킹할 네이버 블로그 아이디를 입력하세요:", key="blog_id")
@@ -142,6 +146,9 @@ with tab1:
                 except Exception as e:
                     st.error(f"오류가 발생했습니다: {e}")
 
+# ====================================================
+# [그대로 유지 + 띄어쓰기 안내 추가] 탭 2: 전수조사
+# ====================================================
 with tab2:
     st.subheader("씨앗 키워드 기반 연관/롱테일 키워드 전수조사")
     target_kw = st.text_input("씨앗 키워드를 띄어쓰기로 구분해 입력하세요 (예: 삼성전자 주가 -> 두 단어 모두 포함된 키워드만 추출):", key="target_kw")
@@ -274,22 +281,19 @@ with tab2:
                     csv2 = final_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
                     st.download_button(label="📥 CSV 파일로 다운로드", data=csv2, file_name=f"{target_kw.replace(' ', '')}_황금키워드리포트.csv", mime="text/csv")
 
-
 # ====================================================
-# 📌 탭 3: 신규 추가된 빠른 다중 검색 기능
+# [그대로 유지] 탭 3: 일괄 조회
 # ====================================================
 with tab3:
     st.subheader("키워드 검색량 및 블로그 문서 수 일괄 조회")
     st.markdown("💡 단일 키워드를 입력하거나, 여러 개의 키워드를 **줄바꿈(엔터)**으로 구분하여 입력하세요.")
     
-    # 여러 줄을 입력받을 수 있는 텍스트 영역 생성
     quick_kws_input = st.text_area("조회할 키워드 입력:", height=150, key="quick_kws")
     
     if st.button("빠른 조회 시작", type="primary", key="btn_tab3"):
         if not quick_kws_input.strip():
             st.warning("조회할 키워드를 1개 이상 입력해주세요.")
         else:
-            # 엔터 단위로 쪼개고 빈 줄은 무시하는 리스트 생성
             raw_kws = quick_kws_input.split('\n')
             target_kws = [kw.strip() for kw in raw_kws if kw.strip()]
             
@@ -307,7 +311,6 @@ with tab3:
                     timestamp = str(int(time.time() * 1000))
                     ad_headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_LICENSE, "X-Customer": str(AD_ID), "X-Signature": get_naver_signature(timestamp, "GET", "/keywordstool", AD_SECRET)}
                     
-                    # 네이버 광고 API 연동[cite: 2]
                     try:
                         res = requests.get("https://api.naver.com/keywordstool", params={'hintKeywords': kw.replace(" ", ""), 'showDetail': '1'}, headers=ad_headers)
                         if res.status_code == 200 and res.json().get('keywordList'):
@@ -318,22 +321,96 @@ with tab3:
                                     break
                     except: pass
                     
-                    # 블로그 문서 수 API 연동[cite: 2]
                     doc_cnt = get_blog_count(kw)
                     
                     ratio = round(doc_cnt / total, 2) if total > 0 else 0
                     quick_results.append([kw, pc, mo, total, doc_cnt, ratio])
                     
-                    # 조회될 때마다 실시간으로 엑셀 표 업데이트
                     df_quick = pd.DataFrame(quick_results, columns=['키워드', 'PC', 'MO', '조회수합계', '블로그문서수', '경쟁비율']).sort_values(by='조회수합계', ascending=False)
                     quick_table.dataframe(df_quick, use_container_width=True)
                     
-                    time.sleep(0.3) # 너무 빠른 조회로 인한 API 차단 방지
+                    time.sleep(0.3)
                     
                 progress_quick.empty()
                 st.success(f"✨ 총 {len(target_kws)}개 키워드 조회가 깔끔하게 완료되었습니다!")
                 
-                # 분석 결과를 CSV로 다운로드하는 기능 
                 if quick_results:
                     csv3 = df_quick.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
                     st.download_button(label="📥 조회 결과 CSV 다운로드", data=csv3, file_name="빠른키워드조회결과.csv", mime="text/csv", key="dl_tab3")
+
+
+# ====================================================
+# 🆕 [신규 추가] 탭 4: 지식iN 질문 수집기
+# ====================================================
+with tab4:
+    st.subheader("💡 지식iN 실제 질문 수집기 (목차/소제목 발굴용)")
+    st.markdown("💡 띄어쓰기로 단어를 구분하면, **모든 단어가 포함된 최신 질문(최대 100개)**만 깐깐하게 걸러냅니다.")
+    
+    kin_kw = st.text_input("수집할 질문의 핵심 키워드를 띄어쓰기로 구분해 입력하세요 (예: 삼성전자 주가):", key="kin_kw")
+    
+    if st.button("질문 수집 시작 (최신 100개 기준)", type="primary", key="btn_tab4"):
+        if not kin_kw.strip():
+            st.warning("키워드를 입력해주세요.")
+        else:
+            with st.spinner("네이버 클라우드 API를 통해 가장 최근에 올라온 지식iN 질문 100개를 분석하고 있습니다..."):
+                headers = {
+                    "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
+                    "X-NCP-APIGW-API-KEY": NAVER_SECRET
+                }
+                
+                # 네이버 서버에는 띄어쓰기를 없애서 일단 100개를 가득 끌어옵니다. (sort="date" 로 최신순 정렬)
+                api_query = kin_kw.replace(" ", "")
+                params = {"query": api_query, "display": 100, "sort": "date"}
+                
+                try:
+                    res = requests.get("https://naverapihub.apigw.ntruss.com/search/v1/kin", headers=headers, params=params, timeout=10)
+                    
+                    if res.status_code == 200:
+                        items = res.json().get('items', [])
+                        
+                        if not items:
+                            st.warning("수집된 지식iN 질문이 없습니다.")
+                        else:
+                            # 띄어쓰기를 기준으로 사용자가 입력한 단어들을 리스트로 쪼갭니다 (AND 조건 필터링용)
+                            mandatory_terms = [t.lower() for t in kin_kw.split()]
+                            kin_results = []
+                            
+                            for item in items:
+                                # 네이버 API가 주는 <b> 같은 불필요한 HTML 태그를 정규식으로 깔끔하게 지워냅니다.
+                                raw_title = re.sub(r'<[^>]*>', '', item.get('title', ''))
+                                raw_desc = re.sub(r'<[^>]*>', '', item.get('description', ''))
+                                link = item.get('link', '')
+                                
+                                # AND 필터링: 질문 제목에 우리가 원하는 단어들이 모두 포함되어 있는지 깐깐하게 검사
+                                if all(term in raw_title.lower() for term in mandatory_terms):
+                                    kin_results.append([raw_title, raw_desc, link])
+                            
+                            if not kin_results:
+                                st.warning("최신 100개의 질문 중, 입력하신 단어가 모두 포함된 완벽한 질문이 없습니다.")
+                            else:
+                                st.success(f"✨ 필터링 완료! 총 {len(kin_results)}개의 유효한 알짜 질문을 발굴했습니다.")
+                                
+                                df_kin = pd.DataFrame(kin_results, columns=['질문 제목', '내용 미리보기 (Snippet)', '원문 링크'])
+                                
+                                # 표 출력 (원문 링크를 클릭 가능한 상태로 세팅)
+                                st.dataframe(
+                                    df_kin, 
+                                    use_container_width=True,
+                                    column_config={
+                                        "원문 링크": st.column_config.LinkColumn("원문 링크", display_text="지식iN 바로가기")
+                                    }
+                                )
+                                
+                                # CSV 다운로드 버튼
+                                csv4 = df_kin.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                                st.download_button(
+                                    label="📥 알짜 질문 리스트 CSV 다운로드", 
+                                    data=csv4, 
+                                    file_name=f"{kin_kw.replace(' ', '')}_지식iN질문.csv", 
+                                    mime="text/csv", 
+                                    key="dl_tab4"
+                                )
+                    else:
+                        st.error(f"API 호출 오류 (상태 코드: {res.status_code})")
+                except Exception as e:
+                    st.error(f"데이터를 가져오는 중 오류가 발생했습니다: {e}")
