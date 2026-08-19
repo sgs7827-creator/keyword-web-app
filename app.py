@@ -76,12 +76,13 @@ def fetch_naver_autocompletions(keyword):
 st.set_page_config(page_title="나만의 키워드 마스터", layout="wide")
 st.title("🚀 나만의 블로그 키워드 올인원 툴")
 
-# 📌 탭을 4개로 늘립니다.
-tab1, tab2, tab3, tab4 = st.tabs([
+# 📌 탭을 5개로 늘립니다.
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 1. 타 블로그 벤치마킹", 
     "💎 2. 롱테일 키워드 전수조사", 
     "⚡ 3. 빠른 일괄 조회", 
-    "💡 4. 지식iN 질문 수집기"
+    "💡 4. 지식iN 질문 수집기",
+    "🔍 5. 연관 키워드 원본 분석"
 ])
 
 # ====================================================
@@ -414,3 +415,92 @@ with tab4:
                         st.error(f"API 호출 오류 (상태 코드: {res.status_code})")
                 except Exception as e:
                     st.error(f"데이터를 가져오는 중 오류가 발생했습니다: {e}")
+
+
+# ====================================================
+# 🆕 [신규 추가] 탭 5: 연관 키워드 원본 분석기
+# ====================================================
+with tab5:
+    st.subheader("🔍 네이버 연관 키워드 원본 싹쓸이 분석")
+    st.markdown("💡 네이버 검색광고 API가 제공하는 **모든 연관 키워드(최대 1,000개)**의 검색량과 문서 수를 필터링 없이 그대로 가져옵니다.")
+    
+    raw_target_kw = st.text_input("분석할 씨앗 키워드를 입력하세요 (예: 정부지원금):", key="raw_target_kw")
+    
+    if st.button("원본 분석 시작 (최대 1,000개)", type="primary", key="btn_tab5"):
+        if not raw_target_kw.strip():
+            st.warning("키워드를 입력해주세요.")
+        else:
+            status_text_5 = st.empty()
+            status_text_5.info("📡 1단계: 네이버 광고 API에서 연관 키워드 목록을 가져오는 중입니다...")
+            
+            # 1. 연관 키워드 목록 수집 (확장 및 필터링 없음)
+            api_query = raw_target_kw.replace(" ", "")
+            timestamp = str(int(time.time() * 1000))
+            headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_LICENSE, "X-Customer": str(AD_ID), "X-Signature": get_naver_signature(timestamp, "GET", "/keywordstool", AD_SECRET)}
+            
+            raw_keywords_data = []
+            try:
+                res = requests.get("https://api.naver.com/keywordstool", headers=headers, params={"hintKeywords": api_query, "showDetail": "1"}, timeout=10)
+                if res.status_code == 200:
+                    keyword_list = res.json().get('keywordList', [])
+                    for k in keyword_list:
+                        rel_kw = k['relKeyword']
+                        pc = parse_cnt(k.get('monthlyPcQcCnt', 0))
+                        mo = parse_cnt(k.get('monthlyMobileQcCnt', 0))
+                        raw_keywords_data.append({"kw": rel_kw, "pc": pc, "mo": mo, "total": pc + mo})
+            except Exception as e:
+                st.error(f"광고 API 호출 중 오류가 발생했습니다: {e}")
+            
+            total_raw_kws = len(raw_keywords_data)
+            
+            if total_raw_kws == 0:
+                st.warning("수집된 연관 키워드가 없습니다.")
+            else:
+                # 1,000개를 돌리면 시간이 꽤 걸리므로 예상 시간을 보여줍니다.
+                status_text_5.info(f"🔍 2단계: 총 {total_raw_kws}개 키워드의 블로그 문서 수를 분석합니다. (예상 소요시간: 약 {int((total_raw_kws*0.3)/60)}분)")
+                
+                progress_raw = st.progress(0, text="블로그 문서 수 조회 준비 중...")
+                table_container_5 = st.empty()
+                
+                final_raw_results = []
+                start_time_5 = time.time()
+                
+                for idx, item_data in enumerate(raw_keywords_data):
+                    kw = item_data["kw"]
+                    total_search = item_data["total"]
+                    
+                    # 실시간 예상 시간 계산
+                    elapsed = time.time() - start_time_5
+                    avg_time = elapsed / (idx + 1) if idx > 0 else 0.4
+                    remaining = total_raw_kws - (idx + 1)
+                    eta_sec = int(remaining * avg_time)
+                    m, s = divmod(eta_sec, 60)
+                    eta_str = f"{m}분 {s}초" if m > 0 else f"{s}초"
+                    
+                    progress_raw.progress((idx + 1) / total_raw_kws, text=f"문서 수 분석 중: {kw} ({idx+1}/{total_raw_kws}) | 남은 시간: 약 {eta_str}")
+                    
+                    # 블로그 문서 수 조회
+                    doc_cnt = get_blog_count(kw)
+                    ratio = round(doc_cnt / total_search, 2) if total_search > 0 else 0
+                    
+                    final_raw_results.append([kw, item_data["pc"], item_data["mo"], total_search, doc_cnt, ratio])
+                    
+                    # 브라우저 과부하 방지: 10개마다 한 번씩만 표를 업데이트합니다.
+                    if idx % 10 == 0 or idx == total_raw_kws - 1:
+                        df_raw = pd.DataFrame(final_raw_results, columns=['키워드', 'PC', 'MO', '조회수합계', '블로그문서수', '경쟁비율']).sort_values(by='조회수합계', ascending=False)
+                        table_container_5.dataframe(df_raw, use_container_width=True)
+                    
+                    time.sleep(0.3)
+                    
+                progress_raw.empty()
+                status_text_5.success(f"✨ 분석 완료! 총 {total_raw_kws}개의 연관 키워드 원본 데이터가 수집되었습니다.")
+                
+                if final_raw_results:
+                    csv5 = df_raw.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                    st.download_button(
+                        label="📥 원본 분석 결과 CSV 다운로드", 
+                        data=csv5, 
+                        file_name=f"{raw_target_kw.replace(' ', '')}_연관키워드_원본.csv", 
+                        mime="text/csv", 
+                        key="dl_tab5"
+                    )                    
