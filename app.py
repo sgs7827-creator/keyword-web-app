@@ -86,81 +86,66 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ====================================================
-# 🆕 [기능 변경] 탭 1: 블로그 벤치마킹 (최신글 50개, 방문자수)
+# [그대로 유지] 탭 1: 벤치마킹
 # ====================================================
 with tab1:
-    st.subheader("타겟 블로그 벤치마킹 (최신글 50개, 방문자 수)")
+    st.subheader("최신 50개 포스팅 타겟 키워드 분석")
     blog_id = st.text_input("벤치마킹할 네이버 블로그 아이디를 입력하세요:", key="blog_id")
     
     if st.button("분석 시작", type="primary", key="btn_tab1"):
         if not blog_id:
             st.warning("아이디를 입력해주세요.")
         else:
-            with st.spinner(f"'{blog_id}' 블로그의 데이터를 스캔하고 있습니다..."):
+            with st.spinner('제미나이 AI가 글의 문맥을 읽고 분석 중입니다...'):
                 try:
-                    # ----------------------------------------------------
-                    # 1. 방문자 수 (Today / Total) 수집 (안전한 위젯 API 방식)
-                    # ----------------------------------------------------
-                    today_cnt = "비공개 또는 확인 불가"
-                    total_cnt = "위젯에서 확인 불가 시 직접 접속 필요"
+                    client = genai.Client(api_key=GEMINI_KEY)
+                    url = f"https://rss.blog.naver.com/{blog_id}.xml"
+                    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    soup = BeautifulSoup(response.content, 'xml')
+                    items = soup.find_all('item')[:50]
                     
-                    try:
-                        visit_url = f"https://blog.naver.com/NVisitorgp4Ajax.nhn?blogId={blog_id}"
-                        visit_res = requests.get(visit_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        if visit_res.status_code == 200:
-                            v_soup = BeautifulSoup(visit_res.content, 'xml')
-                            visitor_data = v_soup.find_all('visitorcnt')
-                            if visitor_data:
-                                today_cnt = visitor_data[0].get('cnt', today_cnt)
-                    except Exception:
-                        pass
+                    titles = [item.find('title').text.strip() for item in items]
+                    pub_dates = [email.utils.parsedate_to_datetime(item.find('pubDate').text).strftime("%Y-%m-%d") for item in items]
                     
-                    # ----------------------------------------------------
-                    # 2. 최신 포스팅 50개 수집 (안전한 RSS 방식)
-                    # ----------------------------------------------------
-                    recent_posts = []
-                    try:
-                        rss_url = f"https://rss.blog.naver.com/{blog_id}.xml"
-                        rss_res = requests.get(rss_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        rss_soup = BeautifulSoup(rss_res.content, 'xml')
-                        items = rss_soup.find_all('item')[:50]
+                    prompt = "당신은 네이버 블로그 SEO 전문가입니다. 다음 50개의 블로그 제목에서 사람들이 검색할 법한 '메인 키워드(명사 1~2개 조합)'를 하나씩만 뽑아주세요.\n반드시 '번호. 키워드' 형식으로 대답하세요.\n\n[제목 목록]\n"
+                    for i, t in enumerate(titles): prompt += f"{i+1}. {t}\n"
+                    
+                    ai_response = client.models.generate_content(model='gemini-3.5-flash', contents=prompt)
+                    
+                    keyword_dict = {}
+                    for line in ai_response.text.split('\n'):
+                        match = re.match(r'^(\d+)\.\s*(.+)$', line.strip())
+                        if match: keyword_dict[int(match.group(1)) - 1] = match.group(2).strip()
+
+                    data = []
+                    my_bar = st.progress(0, text="네이버 광고 API에서 연관 키워드를 추출하는 중입니다...")
+                    for i in range(len(titles)):
+                        main_kw = keyword_dict.get(i, "키워드 없음")
+                        rel_kws = "조회 불가"
+                        if main_kw and main_kw not in ["추출 실패", "키워드 없음"]:
+                            time.sleep(0.3)
+                            timestamp = str(int(time.time() * 1000))
+                            headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_LICENSE, "X-Customer": str(AD_ID), "X-Signature": get_naver_signature(timestamp, "GET", "/keywordstool", AD_SECRET)}
+                            try:
+                                res = requests.get("https://api.naver.com/keywordstool", headers=headers, params={"hintKeywords": main_kw.replace(" ", ""), "showDetail": "1"})
+                                if res.status_code == 200:
+                                    kw_list = res.json().get('keywordList', [])
+                                    top_kws = [k['relKeyword'] for k in kw_list if k['relKeyword'] != main_kw.replace(" ", "")]
+                                    rel_kws = ", ".join(top_kws[:5]) if top_kws else "연관 키워드 없음"
+                            except: pass
                         
-                        for item in items:
-                            r_title = item.find('title').text.strip()
-                            r_link = item.find('link').text.strip()
-                            r_date = email.utils.parsedate_to_datetime(item.find('pubDate').text).strftime("%Y-%m-%d")
-                            recent_posts.append({"분류": "최신글", "제목": r_title, "URL": r_link, "발행 날짜": r_date})
-                    except Exception:
-                         recent_posts = [{"분류": "최신글", "제목": "비공개 또는 확인 불가 (RSS 피드 미제공)", "URL": "-", "발행 날짜": "-"}]
-                         
-                    # ----------------------------------------------------
-                    # 화면 출력 및 데이터 병합
-                    # ----------------------------------------------------
-                    st.success("✅ 스캔 완료!")
+                        data.append({"발행 날짜": pub_dates[i], "제목": titles[i], "메인 키워드": main_kw, "연관 추천 키워드": rel_kws})
+                        my_bar.progress((i + 1) / len(titles), text=f"({i+1}/{len(titles)}) 데이터 수집 중...")
+                        
+                    my_bar.empty()
+                    df_result1 = pd.DataFrame(data)
+                    st.success("✅ 분석 완료!")
+                    st.dataframe(df_result1, use_container_width=True)
                     
-                    col_v1, col_v2 = st.columns(2)
-                    col_v1.metric("오늘 방문자 (Today)", f"{today_cnt} 명")
-                    col_v2.metric("전체 방문자 (Total)", total_cnt)
-                    
-                    df_tab1 = pd.DataFrame(recent_posts)
-                    # CSV 다운로드 파일에 '오늘 방문자', '전체 방문자' 열(Column)을 일괄적으로 꽂아 넣습니다.
-                    df_tab1['오늘 방문자'] = today_cnt
-                    df_tab1['전체 방문자'] = total_cnt
-                    
-                    st.markdown("### 📊 수집된 최신 글 목록")
-                    st.dataframe(
-                        df_tab1.drop(columns=['오늘 방문자', '전체 방문자']), 
-                        use_container_width=True,
-                        column_config={
-                            "URL": st.column_config.LinkColumn("링크", display_text="해당 글로 이동")
-                        }
-                    )
-                    
-                    csv_tab1 = df_tab1.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-                    st.download_button(label="📥 분석 결과 CSV 다운로드 (방문자 수 포함)", data=csv_tab1, file_name=f"{blog_id}_블로그스캔결과.csv", mime="text/csv")
-                    
+                    csv = df_result1.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                    st.download_button(label="📥 CSV 파일로 다운로드", data=csv, file_name=f"{blog_id}_벤치마킹분석.csv", mime="text/csv")
                 except Exception as e:
-                    st.error(f"데이터를 가져오는 중 오류가 발생했습니다: {e}")
+                    st.error(f"오류가 발생했습니다: {e}")
 
 # ====================================================
 # [그대로 유지 + 띄어쓰기 안내 추가] 탭 2: 전수조사
