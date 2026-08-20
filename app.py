@@ -129,9 +129,10 @@ with tab1:
                             r_title = item.find('title').text.strip()
                             r_link = item.find('link').text.strip()
                             r_date = email.utils.parsedate_to_datetime(item.find('pubDate').text).strftime("%Y-%m-%d")
-                            recent_posts.append({"분류": "최신글", "제목": r_title, "URL": r_link, "발행 날짜": r_date})
+                            # 데이터 삽입 순서를 '발행 날짜'가 맨 앞에 오도록 변경했습니다.
+                            recent_posts.append({"발행 날짜": r_date, "분류": "최신글", "제목": r_title, "URL": r_link})
                     except Exception:
-                         recent_posts = [{"분류": "최신글", "제목": "비공개 또는 확인 불가 (RSS 피드 미제공)", "URL": "-", "발행 날짜": "-"}]
+                         recent_posts = [{"발행 날짜": "-", "분류": "최신글", "제목": "비공개 또는 확인 불가 (RSS 피드 미제공)", "URL": "-"}]
                          
                     # ----------------------------------------------------
                     # 화면 출력 및 데이터 병합
@@ -143,21 +144,19 @@ with tab1:
                     col_v2.metric("전체 방문자 (Total)", total_cnt)
                     
                     df_tab1 = pd.DataFrame(recent_posts)
-                    # CSV 다운로드 파일에 '오늘 방문자', '전체 방문자' 열(Column)을 일괄적으로 꽂아 넣습니다.
-                    df_tab1['오늘 방문자'] = today_cnt
-                    df_tab1['전체 방문자'] = total_cnt
                     
                     st.markdown("### 📊 수집된 최신 글 목록")
                     st.dataframe(
-                        df_tab1.drop(columns=['오늘 방문자', '전체 방문자']), 
+                        df_tab1, 
                         use_container_width=True,
                         column_config={
                             "URL": st.column_config.LinkColumn("링크", display_text="해당 글로 이동")
                         }
                     )
                     
+                    # 방문자 수 컬럼 주입 로직을 삭제하여 순수 게시글 데이터만 CSV로 다운로드됩니다.
                     csv_tab1 = df_tab1.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-                    st.download_button(label="📥 분석 결과 CSV 다운로드 (방문자 수 포함)", data=csv_tab1, file_name=f"{blog_id}_블로그스캔결과.csv", mime="text/csv")
+                    st.download_button(label="📥 분석 결과 CSV 다운로드", data=csv_tab1, file_name=f"{blog_id}_블로그스캔결과.csv", mime="text/csv")
                     
                 except Exception as e:
                     st.error(f"데이터를 가져오는 중 오류가 발생했습니다: {e}")
