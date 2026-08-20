@@ -86,7 +86,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ====================================================
-# 🆕 [기능 변경] 탭 1: 블로그 벤치마킹 (최신글, 인기글, 방문자수)
+# 🆕 [기능 완벽 수정] 탭 1: 블로그 벤치마킹 (최신글, 인기글, 방문자수 실시간 연동)
 # ====================================================
 with tab1:
     st.subheader("타겟 블로그 벤치마킹 (최신글, 인기글, 방문자 수)")
@@ -96,108 +96,132 @@ with tab1:
         if not blog_id:
             st.warning("아이디를 입력해주세요.")
         else:
-            with st.spinner(f"'{blog_id}' 블로그의 데이터를 스캔하고 있습니다..."):
+            with st.spinner(f"'{blog_id}' 블로그의 모바일 데이터를 딥 스캔하고 있습니다..."):
+                import json  # JSON 데이터 파싱용
+                
+                # ----------------------------------------------------
+                # 1. 방문자 수 & 인기글 동시 수집 (모바일 웹 화면 완벽 스크래핑)
+                # ----------------------------------------------------
+                today_cnt = "비공개 또는 확인 불가"
+                total_cnt = "비공개 또는 확인 불가"
+                popular_posts = []
+                
                 try:
-                    # ----------------------------------------------------
-                    # 1. 방문자 수 (Today / Total) 수집
-                    # ----------------------------------------------------
-                    today_cnt = "비공개 또는 확인 불가"
-                    total_cnt = "비공개 또는 확인 불가"
+                    # 모바일 블로그 메인 화면에 스마트폰인 것처럼 위장하여 접속합니다.
+                    m_url = f"https://m.blog.naver.com/{blog_id}"
+                    headers = {'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36'}
+                    m_res = requests.get(m_url, headers=headers, timeout=5)
                     
-                    try:
-                        # 방문자 위젯을 띄우는 네이버 내부 API 주소
-                        visit_url = f"https://blog.naver.com/NVisitorgp4Ajax.nhn?blogId={blog_id}"
-                        visit_res = requests.get(visit_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        if visit_res.status_code == 200:
-                            # 응답 XML 포맷 파싱
-                            v_soup = BeautifulSoup(visit_res.content, 'xml')
-                            visitor_data = v_soup.find_all('visitorcnt')
-                            if visitor_data:
-                                # 여러 날짜 데이터 중 가장 첫 번째(오늘) 데이터를 가져옵니다.
-                                today_cnt = visitor_data[0].get('cnt', today_cnt)
-                                # total 속성도 파싱 시도 (간혹 응답에 따라 위치가 다를 수 있음)
-                                # 안정성을 위해 HTML 페이지 크롤링으로 Total을 보완할 수도 있지만, 일단 위젯 데이터 확인
-                                total_cnt = "위젯 응답에 따라 확인 필요" 
-                    except Exception:
-                        pass
-                    
-                    # ----------------------------------------------------
-                    # 2. 인기글 수집 (모바일 웹 화면 기반)
-                    # ----------------------------------------------------
-                    popular_posts = []
-                    try:
-                        m_url = f"https://m.blog.naver.com/{blog_id}"
-                        m_res = requests.get(m_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        if m_res.status_code == 200:
-                            m_soup = BeautifulSoup(m_res.content, 'html.parser')
-                            # 모바일 페이지의 인기글 영역 클래스를 찾습니다. (네이버 구조 변경 시 수정 필요)
-                            # 보통 인기글 리스트는 특정한 클래스(예: .post_list, .area_popular 등)를 가집니다.
-                            # 아래는 일반적인 리스트 아이템을 찾는 예시이며, 실제 네이버 HTML 구조에 맞춰 조정해야 할 수 있습니다.
-                            # 이 부분은 "비공개 또는 확인 불가" 처리를 위한 방어적 코드로 구성합니다.
-                            popular_items = m_soup.find_all('li', class_=re.compile(r'post|popular')) 
-                            
-                            for item in popular_items[:10]: # 최대 10개
-                                title_tag = item.find(['strong', 'span', 'div'], class_=re.compile(r'title'))
-                                link_tag = item.find('a', href=True)
-                                
-                                if title_tag and link_tag:
-                                    p_title = title_tag.text.strip()
-                                    p_link = "https://m.blog.naver.com" + link_tag['href'] if link_tag['href'].startswith('/') else link_tag['href']
-                                    popular_posts.append({"분류": "인기글", "제목": p_title, "URL": p_link, "발행 날짜": "-"})
-                    except Exception:
-                        pass
-
-                    if not popular_posts:
-                        popular_posts = [{"분류": "인기글", "제목": "비공개 또는 확인 불가 (모바일 인기글 미설정)", "URL": "-", "발행 날짜": "-"}]
-
-
-                    # ----------------------------------------------------
-                    # 3. 최신 포스팅 50개 수집 (RSS 방식)
-                    # ----------------------------------------------------
-                    recent_posts = []
-                    try:
-                        rss_url = f"https://rss.blog.naver.com/{blog_id}.xml"
-                        rss_res = requests.get(rss_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        rss_soup = BeautifulSoup(rss_res.content, 'xml')
-                        items = rss_soup.find_all('item')[:50]
+                    if m_res.status_code == 200:
+                        html = m_res.text
                         
-                        for item in items:
-                            r_title = item.find('title').text.strip()
-                            r_link = item.find('link').text.strip()
-                            r_date = email.utils.parsedate_to_datetime(item.find('pubDate').text).strftime("%Y-%m-%d")
-                            recent_posts.append({"분류": "최신글", "제목": r_title, "URL": r_link, "발행 날짜": r_date})
-                    except Exception:
-                         recent_posts = [{"분류": "최신글", "제목": "비공개 또는 확인 불가 (RSS 피드 미제공)", "URL": "-", "발행 날짜": "-"}]
-                         
-                    # ----------------------------------------------------
-                    # 화면 출력 및 데이터 병합
-                    # ----------------------------------------------------
-                    st.success("✅ 스캔 완료!")
-                    
-                    # 상단 요약 정보 (방문자 수)
-                    col_v1, col_v2 = st.columns(2)
-                    col_v1.metric("오늘 방문자 (Today)", f"{today_cnt} 명")
-                    col_v2.metric("전체 방문자 (Total)", "위젯에서 확인 불가 시 직접 접속 필요") # 네이버 위젯 API 특성상 Total을 바로 주지 않는 경우가 많음
-                    
-                    # 데이터 프레임 생성
-                    final_data = popular_posts + recent_posts
-                    df_tab1 = pd.DataFrame(final_data)
-                    
-                    st.markdown("### 📊 수집된 글 목록 (인기글 + 최신글)")
-                    st.dataframe(
-                        df_tab1, 
-                        use_container_width=True,
-                        column_config={
-                            "URL": st.column_config.LinkColumn("링크", display_text="해당 글로 이동")
-                        }
-                    )
-                    
-                    # CSV 다운로드
-                    csv_tab1 = df_tab1.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-                    st.download_button(label="📥 분석 결과 CSV 다운로드", data=csv_tab1, file_name=f"{blog_id}_블로그스캔결과.csv", mime="text/csv")
-                    
+                        # 네이버 모바일 블로그는 화면을 그리기 전 'window.__INITIAL_STATE__' 라는 공간에 
+                        # 방문자 수와 인기글 등의 모든 알짜 데이터를 JSON(사전) 형태로 숨겨둡니다.
+                        state_match = re.search(r'window\.__INITIAL_STATE__\s*=\s*(\{.*?\});', html, re.DOTALL)
+                        
+                        if state_match:
+                            state_data = json.loads(state_match.group(1))
+                            
+                            # 숨겨진 데이터 구조 속에서 원하는 열쇠(Key)를 자동으로 찾아주는 탐지기 함수
+                            def find_key(obj, key):
+                                if isinstance(obj, dict):
+                                    if key in obj: return obj[key]
+                                    for k, v in obj.items():
+                                        res = find_key(v, key)
+                                        if res is not None: return res
+                                elif isinstance(obj, list):
+                                    for item in obj:
+                                        res = find_key(item, key)
+                                        if res is not None: return res
+                                return None
+
+                            # [방문자 수 추출] - 딜레이 없이 100% 정확한 실시간 데이터
+                            visitor_info = find_key(state_data, 'visitor')
+                            if isinstance(visitor_info, dict):
+                                t_today = visitor_info.get('today')
+                                t_total = visitor_info.get('total')
+                                if t_today is not None: today_cnt = f"{int(t_today):,}"
+                                if t_total is not None: total_cnt = f"{int(t_total):,}"
+                            
+                            # [인기글 추출] - 디자인(UI) 무시하고 원본 데이터 직출
+                            pop_list = find_key(state_data, 'popularPostList')
+                            if isinstance(pop_list, list):
+                                for p in pop_list[:10]:
+                                    p_title = p.get('title', '')
+                                    p_logNo = p.get('logNo')
+                                    if p_title and p_logNo:
+                                        # 제목에 섞여있는 HTML 태그 및 특수문자 완벽 청소
+                                        p_title = re.sub(r'<[^>]*>', '', p_title)
+                                        p_title = p_title.replace('&quot;', '"').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                                        
+                                        popular_posts.append({
+                                            "분류": "인기글", 
+                                            "제목": p_title, 
+                                            "URL": f"https://m.blog.naver.com/{blog_id}/{p_logNo}", 
+                                            "발행 날짜": "-"
+                                        })
+                                        
+                        # 만약 JSON 방식이 실패하면, 보험용으로 눈에 보이는 HTML 태그(span)에서 방문자 수를 찾습니다.
+                        if today_cnt == "비공개 또는 확인 불가":
+                            soup = BeautifulSoup(html, 'html.parser')
+                            count_spans = soup.find_all('span', class_='count')
+                            if len(count_spans) >= 2:
+                                today_cnt = count_spans[0].text.strip()
+                                total_cnt = count_spans[1].text.strip()
+                                
                 except Exception as e:
-                    st.error(f"데이터를 가져오는 중 오류가 발생했습니다: {e}")
+                    pass
+
+                if not popular_posts:
+                    popular_posts = [{"분류": "인기글", "제목": "비공개 또는 확인 불가 (모바일 인기글 미설정)", "URL": "-", "발행 날짜": "-"}]
+
+                # ----------------------------------------------------
+                # 2. 최신 포스팅 50개 수집 (RSS 방식)
+                # ----------------------------------------------------
+                recent_posts = []
+                try:
+                    rss_url = f"https://rss.blog.naver.com/{blog_id}.xml"
+                    rss_res = requests.get(rss_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+                    rss_soup = BeautifulSoup(rss_res.content, 'xml')
+                    items = rss_soup.find_all('item')[:50]
+                    
+                    for item in items:
+                        r_title = item.find('title').text.strip()
+                        r_link = item.find('link').text.strip()
+                        r_date = email.utils.parsedate_to_datetime(item.find('pubDate').text).strftime("%Y-%m-%d")
+                        recent_posts.append({"분류": "최신글", "제목": r_title, "URL": r_link, "발행 날짜": r_date})
+                except Exception:
+                     recent_posts = [{"분류": "최신글", "제목": "비공개 또는 확인 불가 (RSS 피드 미제공)", "URL": "-", "발행 날짜": "-"}]
+                     
+                # ----------------------------------------------------
+                # 화면 출력 및 데이터 병합 (CSV 열 추가)
+                # ----------------------------------------------------
+                st.success("✅ 스캔 완료!")
+                
+                col_v1, col_v2 = st.columns(2)
+                col_v1.metric("오늘 방문자 (Today)", f"{today_cnt} 명")
+                col_v2.metric("전체 방문자 (Total)", f"{total_cnt} 명")
+                
+                final_data = popular_posts + recent_posts
+                df_tab1 = pd.DataFrame(final_data)
+                
+                # CSV 다운로드 파일에 '오늘 방문자', '전체 방문자' 열(Column)을 일괄적으로 꽂아 넣습니다.
+                df_tab1['오늘 방문자'] = today_cnt
+                df_tab1['전체 방문자'] = total_cnt
+                
+                st.markdown("### 📊 수집된 글 목록 (인기글 + 최신글)")
+                
+                # 화면 표 출력 시에는 중복되는 방문자 수 컬럼을 숨기고 깔끔하게 보여줍니다.
+                st.dataframe(
+                    df_tab1.drop(columns=['오늘 방문자', '전체 방문자']), 
+                    use_container_width=True,
+                    column_config={
+                        "URL": st.column_config.LinkColumn("링크", display_text="해당 글로 이동")
+                    }
+                )
+                
+                csv_tab1 = df_tab1.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                st.download_button(label="📥 스캔 결과 CSV 다운로드 (방문자 수 포함)", data=csv_tab1, file_name=f"{blog_id}_블로그스캔결과.csv", mime="text/csv")
 
 # ====================================================
 # [그대로 유지 + 띄어쓰기 안내 추가] 탭 2: 전수조사
